@@ -1,0 +1,17 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environment
+venv/
+env/
+
+# Ignore log files
+*.log
+
+# Ignore output files
+valid_accounts.txt
+failed_accounts.txt
+temp_accounts.txt
