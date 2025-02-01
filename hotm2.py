@@ -27,7 +27,15 @@ def process_accounts(accounts):
     failed_accounts = []
     total = len(accounts)
 
-    for index, (email, password) in enumerate(accounts, start=1):
+    for index, line in enumerate(accounts, start=1):
+        parts = line.strip().split(":")
+
+        # Validate email:password format
+        if len(parts) != 2:
+            update_progress(f"⚠️ Skipping invalid line: {line}")
+            continue
+
+        email, password = parts
         start_time = time.time()
         update_progress(f"🔄 Checking {index}/{total}: {email}...")
 
@@ -61,7 +69,7 @@ def upload_file():
         messagebox.showwarning("No File Selected", "Please select a file to proceed.")
         return
     with open(file_path, "r") as f:
-        accounts = [line.strip().split(":") for line in f.readlines()]
+        accounts = f.readlines()
     start_processing(accounts)
 
 # Paste accounts function
@@ -70,10 +78,10 @@ def paste_accounts():
     if not input_text:
         messagebox.showwarning("No Input", "Please enter email:password list.")
         return
-    accounts = [line.strip().split(":") for line in input_text.split("\n")]
+    accounts = input_text.split("\n")
     start_processing(accounts)
 
-# Start processing in a separate thread (Prevents GUI freezing)
+# Start processing
 def start_processing(accounts):
     global success_count, failed_count
     success_count = 0
